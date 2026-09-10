@@ -1,0 +1,24 @@
+# -*- coding: utf-8 -*-
+"""
+格式示例（非真实卡牌）：阶段 2 从社区卡池数据库整理真实卡牌时，
+每张牌都按这个结构存。字段拿不准就先照抄官方卡面文本，别自己概括。
+"""
+{
+    "meta": {
+        "note": "此文件为字段格式示例，请替换为真实卡牌数据",
+        "set": "Origins",
+        "rules_version": "2026-07",
+        "source": "官方卡牌数据库 / TCGplayer 等，记录来源URL",
+        "retrieved_at": "2026-09-XX"
+    },
+    "card": {
+        "id": "ORI-001",
+        "name": "Example Champion",
+        "type": "Champion",
+        "cost": 6,
+        "domains": ["Calm", "Might"],
+        "text": "逐字抄录官方英文卡面文本，包括所有关键词和触发效果，不做任何改写",
+        "rarity": "Rare",
+        "notes": "社区共识的用法备注（可选）"
+    }
+}
