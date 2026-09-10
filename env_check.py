@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-env_check.py —— 环境自检：Python / 网络 / Git / API Key。全绿就能开工。
+env_check.py -- environment sanity checks: Python, network, git, API key.
 
-用法：python env_check.py
+Usage: python env_check.py
 """
 import os
 import subprocess
@@ -16,7 +16,11 @@ def check(name, ok, detail=""):
 
 
 def load_env_file(filename=".env"):
-    """从脚本所在目录的 .env 文件读取 KEY=VALUE（不覆盖已有环境变量）。"""
+    """Load KEY=VALUE pairs from a local .env file into os.environ.
+
+    Existing environment variables take precedence; utf-8-sig tolerates
+    the BOM that Windows Notepad prepends.
+    """
     full = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
     if not os.path.exists(full):
         return
@@ -36,22 +40,22 @@ def main():
     results = []
     load_env_file()
 
-    results.append(check("Python 版本 >= 3.10", sys.version_info >= (3, 10), sys.version.split()[0]))
+    results.append(check("Python >= 3.10", sys.version_info >= (3, 10), sys.version.split()[0]))
 
     try:
         urllib.request.urlopen("https://www.baidu.com", timeout=8)
-        results.append(check("网络连通", True))
+        results.append(check("Network reachable", True))
     except Exception as e:
-        results.append(check("网络连通", False, str(e)[:60]))
+        results.append(check("Network reachable", False, str(e)[:60]))
 
     try:
         v = subprocess.run(["git", "--version"], capture_output=True, text=True).stdout.strip()
-        results.append(check("Git 已安装", True, v))
+        results.append(check("Git installed", True, v))
     except Exception:
-        results.append(check("Git 已安装", False, "（可选，去 git-scm.com 下载）"))
+        results.append(check("Git installed", False, "(optional, see git-scm.com)"))
 
     key = os.environ.get("DEEPSEEK_API_KEY", "")
-    results.append(check("DeepSeek API Key 已设置", bool(key), "" if key else "（未设置也能先跑 --mock 演练）"))
+    results.append(check("API key configured", bool(key), "" if key else "(--mock works without it)"))
 
     core_ok = results[0] and results[1]
     print("\n" + ("Core environment ready." if core_ok else "Fix the FAIL items first."))

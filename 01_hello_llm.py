@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-01_hello_llm.py —— 你的第一个 LLM 调用脚本（阶段 0 毕业作业）
+01_hello_llm.py -- minimal end-to-end example for this repo.
 
-跑通它 = 学会评测研究最核心的技术动作：给模型出题、收答案、存结果。
+Builds a single decision prompt, calls an OpenAI-compatible chat API,
+and persists the answer as JSON. This is the same loop the full
+evaluation pipeline uses, scaled down to one question.
 
-怎么跑：
-  1. 去 https://platform.deepseek.com 注册，充值几块钱，创建 API Key
-  2. 设置环境变量后运行：
-       PowerShell:  $env:DEEPSEEK_API_KEY="sk-xxx"
-       CMD:         set DEEPSEEK_API_KEY=sk-xxx
-       python 01_hello_llm.py            # 正式调用
-  3. 还没注册？先离线演练，不花一分钱：
-       python 01_hello_llm.py --mock
+Usage:
+  python 01_hello_llm.py --mock   # offline test, no API cost
+  python 01_hello_llm.py          # real call; reads DEEPSEEK_API_KEY
+                                  # from the environment or a .env file
 
-零依赖：只用 Python 标准库，不需要 pip install 任何东西。
+Standard library only, by design: fewer installs, fewer failure points.
 """
 import json
 import os
@@ -21,18 +19,19 @@ import sys
 import time
 import urllib.request
 
-# ---------- 配置区：换厂商只需改这三行 ----------
-BASE_URL = "https://api.deepseek.com"   # 阿里Qwen: https://dashscope.aliyuncs.com/compatible-mode/v1
-MODEL = "deepseek-chat"                 # 模型名随平台变
-KEY_ENV = "DEEPSEEK_API_KEY"            # 环境变量名 / .env 文件里的变量名
-# ------------------------------------------------
+# --- Provider settings. Switching vendors means editing these three lines. ---
+BASE_URL = "https://api.deepseek.com"   # e.g. Qwen: https://dashscope.aliyuncs.com/compatible-mode/v1
+MODEL = "deepseek-chat"
+KEY_ENV = "DEEPSEEK_API_KEY"
+# -----------------------------------------------------------------------------
 
 
 def load_env_file(filename=".env"):
-    """从脚本所在目录的 .env 文件读取 KEY=VALUE，塞进环境变量（不覆盖已有的）。
+    """Load KEY=VALUE pairs from a local .env file into os.environ.
 
-    这样你只需用记事本把 Key 粘进 .env 文件，不用碰系统环境变量。
-    utf-8-sig 是为了容忍记事本保存时自动加的 BOM 头。
+    Variables already set in the environment take precedence. Encoding
+    is utf-8-sig so the file survives being saved by Windows Notepad,
+    which prepends a BOM.
     """
     full = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
     if not os.path.exists(full):
@@ -50,7 +49,7 @@ def load_env_file(filename=".env"):
 
 
 def ask_llm(question, api_key, temperature=0.7):
-    """给 LLM 发一条消息，返回回复文本。OpenAI 兼容接口，全平台通用。"""
+    """Send one user message, return the reply text."""
     payload = {
         "model": MODEL,
         "messages": [{"role": "user", "content": question}],
@@ -71,7 +70,11 @@ def ask_llm(question, api_key, temperature=0.7):
 
 
 def save_result(question, answer, out_path):
-    """把问答存成 JSON——评测研究的原始数据就是这么攒的。"""
+    """Persist one prompt/answer pair.
+
+    The model name and timestamp are stored with every record so that
+    results stay comparable across runs and models.
+    """
     record = {
         "time": time.strftime("%Y-%m-%d %H:%M:%S"),
         "model": MODEL,
@@ -85,36 +88,37 @@ def save_result(question, answer, out_path):
 if __name__ == "__main__":
     mock = "--mock" in sys.argv
 
-    # 这道题就是一个微型"单决策点评测"样例——阶段 2 会把它扩展成 100 道
+    # A minimal single-decision probe. The full evaluation set will
+    # extend this pattern to ~100 items with reference answers.
     question = (
-        "你在玩一款卡牌游戏。你本回合有 2 点资源，手牌如下：\n"
-        "A. 花费 2 点：召唤一个 3 攻击力的单位\n"
-        "B. 花费 1 点：抽一张牌\n"
-        "C. 花费 0 点：本回合结束前获得 1 点护盾\n"
-        "对手场上已有一个 2 攻击力的单位。"
-        "请从 A/B/C 中选一个最优动作，并用一句话说明理由。"
+        "You are playing a card game. You have 2 resources this turn. Your hand:\n"
+        "A. Cost 2: summon a unit with 3 attack.\n"
+        "B. Cost 1: draw a card.\n"
+        "C. Cost 0: gain 1 shield until end of turn.\n"
+        "Your opponent has a unit with 2 attack on the battlefield. "
+        "Pick the best action among A/B/C and justify it in one sentence."
     )
-    print("题目：")
+    print("Prompt:")
     print(question)
     print()
 
     if mock:
-        answer = "[mock 模式] 选 A：对手场上已有单位，先建立场面压力比抽牌和防御更主动……"
-        print("(离线演练回复)")
+        answer = ("[mock] B: the 3-attack unit does not immediately remove the "
+                  "opponent's 2-attack unit, and drawing keeps a resource open.")
+        print("(mock reply)")
         print(answer)
     else:
         load_env_file()
         api_key = os.environ.get(KEY_ENV, "")
         if not api_key:
             sys.exit(
-                "未找到 API Key。两种设置方式任选：\n"
-                "  A. 用记事本打开本目录下的 .env 文件，把 Key 粘到等号后面并保存；\n"
-                "  B. 设置环境变量 " + KEY_ENV + "，然后重新运行。\n"
-                "或者先跑 --mock 离线演练。"
+                "No API key found. Either put DEEPSEEK_API_KEY=sk-... in a .env "
+                "file next to this script (see README), or run with --mock for "
+                "an offline test."
             )
-        print("正在调用模型，请稍候……")
+        print("Calling model ...")
         answer = ask_llm(question, api_key)
-        print("模型回复：")
+        print("Reply:")
         print(answer)
 
     out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
