@@ -54,7 +54,7 @@ def main():
     results.append(check("DeepSeek API Key 已设置", bool(key), "" if key else "（未设置也能先跑 --mock 演练）"))
 
     core_ok = results[0] and results[1]
-    print("\n结论：" + ("核心环境就绪，可以开工。" if core_ok else "先处理 FAIL 项再开工。"))
+    print("\n" + ("Core environment ready." if core_ok else "Fix the FAIL items first."))
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 results/
 .env
+GUIDE.md
 __pycache__/
 *.pyc

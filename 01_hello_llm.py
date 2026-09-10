@@ -122,5 +122,4 @@ if __name__ == "__main__":
     out_path = os.path.join(out_dir, "hello_llm.json")
     save_result(question, answer, out_path)
     print()
-    print("已保存到 " + out_path)
-    print("恭喜——这就是你科研数据 pipeline 的第一块砖。")
+    print("Result saved to " + out_path)
