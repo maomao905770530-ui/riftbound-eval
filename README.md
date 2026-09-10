@@ -1,51 +1,38 @@
 # riftbound-eval
 
-Evaluating how well large language models play Riftbound, the League of Legends trading card game, at the level of individual decisions: card text understanding, legal-move selection, and resource planning.
+I'm studying how well large language models play [Riftbound](https://playriftbound.com/), the League of Legends trading card game — not full games yet, but the individual decisions a player faces: reading card text, picking legal plays, and planning resources.
 
-Part of a research project on LLM agents in strategic games. The evaluation set, experiment scripts, and results will be added as they are built.
+Why Riftbound? Its cards are dense natural-language artifacts — effects, triggers, restrictions — so playing well requires exactly the kind of precise reading that LLMs are supposed to be good at, and often aren't. The game is also new (released October 2025) and has no official digital client, so no published LLM benchmark for it exists as far as I can tell.
+
+## What's here now
+
+- `01_hello_llm.py` — a minimal end-to-end script: builds a decision prompt, calls an OpenAI-compatible API, saves the answer. Run with `--mock` to test the pipeline without spending credits.
+- `env_check.py` — sanity checks for Python, network, git, and the API key.
+- `data/cards/` — card data from the Origins set. A format example is included; real data is being collected.
+
+## What's coming
+
+- An evaluation set of ~100 decision problems (card text understanding, move selection, resource planning), each with a reference answer and a rationale.
+- Runs across 6–8 models (proprietary and open, reasoning and non-reasoning), followed by error analysis grouped by failure mode.
+
+## Reproducibility notes
+
+- Everything is pinned to the 2026-07 core rules update and the Origins set. Card records store their source and retrieval date.
+- Each experiment run will record model version, temperature, and sampling settings.
+- API keys live in a local `.env` file, which is gitignored. No keys in the repo, ever.
 
 ## Setup
 
-Requires Python 3.10+.
-
-1. Clone the repo and create a `.env` file in the project root:
-
-   ```
-   DEEPSEEK_API_KEY=sk-...
-   ```
-
-2. Check your environment:
-
-   ```
-   python env_check.py
-   ```
-
-3. Smoke test without spending API credits:
-
-   ```
-   python 01_hello_llm.py --mock
-   ```
-
-4. Run a real query:
-
-   ```
-   python 01_hello_llm.py
-   ```
-
-## Structure
+Python 3.10+ only, standard library — nothing to install. Put your key in a `.env` file in the project root:
 
 ```
-01_hello_llm.py     minimal end-to-end example: prompt -> API call -> saved result
-env_check.py        environment sanity checks
-data/cards/         card text data (Origins set)
-results/            model outputs, gitignored
-docs/               project notes and literature notes
+DEEPSEEK_API_KEY=sk-...
 ```
 
-## Data versioning
+Then:
 
-Card data and experiments are tied to a fixed rules version (2026-07 core rules update) and set (Origins). Each card record stores its source and retrieval date.
-
-## Status
-
-Work in progress. Current stage: building the evaluation set.
+```
+python env_check.py            # sanity check
+python 01_hello_llm.py --mock  # no API cost
+python 01_hello_llm.py         # real call
+```
