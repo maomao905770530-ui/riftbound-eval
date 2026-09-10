@@ -24,9 +24,8 @@ python env_check.py
 # 2. 离线演练（不花钱，验证流程）
 python 01_hello_llm.py --mock
 
-# 3. 正式调用：注册 https://platform.deepseek.com ，充值几块钱，
-#    创建 API Key，然后设置环境变量后运行：
-#    PowerShell:  $env:DEEPSEEK_API_KEY="sk-你的key"
+# 3. 正式调用：注册 https://platform.deepseek.com ，充值几块钱，创建 API Key；
+#    用记事本打开本目录下的 .env 文件，把 Key 粘到等号后面，Ctrl+S 保存，然后运行：
 python 01_hello_llm.py
 ```
 

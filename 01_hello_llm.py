@@ -24,8 +24,29 @@ import urllib.request
 # ---------- 配置区：换厂商只需改这三行 ----------
 BASE_URL = "https://api.deepseek.com"   # 阿里Qwen: https://dashscope.aliyuncs.com/compatible-mode/v1
 MODEL = "deepseek-chat"                 # 模型名随平台变
-KEY_ENV = "DEEPSEEK_API_KEY"            # 环境变量名
+KEY_ENV = "DEEPSEEK_API_KEY"            # 环境变量名 / .env 文件里的变量名
 # ------------------------------------------------
+
+
+def load_env_file(filename=".env"):
+    """从脚本所在目录的 .env 文件读取 KEY=VALUE，塞进环境变量（不覆盖已有的）。
+
+    这样你只需用记事本把 Key 粘进 .env 文件，不用碰系统环境变量。
+    utf-8-sig 是为了容忍记事本保存时自动加的 BOM 头。
+    """
+    full = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+    if not os.path.exists(full):
+        return
+    with open(full, encoding="utf-8-sig") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and value and key not in os.environ:
+                os.environ[key] = value
 
 
 def ask_llm(question, api_key, temperature=0.7):
@@ -82,9 +103,15 @@ if __name__ == "__main__":
         print("(离线演练回复)")
         print(answer)
     else:
+        load_env_file()
         api_key = os.environ.get(KEY_ENV, "")
         if not api_key:
-            sys.exit("未找到环境变量 " + KEY_ENV + "。设置后再跑，或先用 --mock 演练。")
+            sys.exit(
+                "未找到 API Key。两种设置方式任选：\n"
+                "  A. 用记事本打开本目录下的 .env 文件，把 Key 粘到等号后面并保存；\n"
+                "  B. 设置环境变量 " + KEY_ENV + "，然后重新运行。\n"
+                "或者先跑 --mock 离线演练。"
+            )
         print("正在调用模型，请稍候……")
         answer = ask_llm(question, api_key)
         print("模型回复：")
