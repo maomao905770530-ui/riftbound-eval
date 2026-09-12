@@ -3,3 +3,6 @@ results/
 GUIDE.md
 __pycache__/
 *.pyc
+# Raw card data pulled from the official gallery API: kept local until the
+# Riot content-policy review decides what may be publicly redistributed.
+data/cards/*_raw.json
