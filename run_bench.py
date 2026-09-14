@@ -11,10 +11,12 @@ Design notes (why it looks like this):
   without re-paying for calls.
 
 Usage:
-    python run_bench.py --model deepseek            # one model
+    python run_bench.py --model deepseek            # one model, condition A
     python run_bench.py --model qwen
+    python run_bench.py --model deepseek --condition B   # + frozen global rules card
+    python run_bench.py --model deepseek --condition C   # + per-item oracle rules subset
     python run_bench.py --model deepseek --limit 3  # smoke test
-Results -> results/pilot_<model>_<ts>.jsonl
+Results -> results/pilot<cond>_<model>_<ts>.jsonl
 """
 
 import argparse
@@ -27,6 +29,8 @@ import time
 import urllib.request
 
 BENCH_PATH = "data/bench/riftbench_origins_v0.3.jsonl"
+RULES_CARD_PATH = "data/bench/rules_card_B.md"
+ORACLE_MAP_PATH = "data/bench/rules_oracle_C.json"
 ENV_PATH = ".env"
 
 MODELS = {
@@ -47,6 +51,54 @@ SYSTEM_PROMPT = (
     "using only the card texts and state provided. Output only the requested JSON."
 )
 
+def build_oracle_slicer() -> dict:
+    """Parse rules_card_B.md into logical (section.item) -> text fragments.
+
+    Positional resolution: inside each '## N.' section, the k-th numbered
+    list item becomes 'N.k'. This sidesteps the frozen card's Section 2
+    numbering typo (two entries labeled '7.'), which logically are 2.7 and
+    2.8. See rules_oracle_C.json meta.section_note.
+    """
+    card = open(RULES_CARD_PATH, encoding="utf-8").read()
+    body = card.split("# RIFTBOUND GLOBAL RULES REFERENCE", 1)[1].split("## Harness notes", 1)[0]
+    frags = {}
+    cur_sec = None
+    k = 0
+    for line in body.splitlines():
+        sec = re.match(r"^## (\d+)\.", line)
+        if sec:
+            cur_sec = sec.group(1)
+            k = 0
+            continue
+        item = re.match(r"^(\d+)\.\s+(.*)$", line)
+        if item and cur_sec:
+            k += 1
+            frags[f"{cur_sec}.{k}"] = item.group(2).strip()
+    return frags
+
+
+def build_oracle_block(case_id: str, oracle_map: dict, frags: dict) -> tuple:
+    """Assemble the per-item rules block for condition C. Returns (text, rules_used)."""
+    entry = oracle_map["pairs"].get(case_id)
+    if entry is None:
+        raise KeyError(f"no oracle mapping for {case_id}")
+    rules_used = entry["rules"]
+    missing = [r for r in rules_used if r not in frags]
+    if missing:
+        raise KeyError(f"oracle ids not found in rules card: {missing} (case {case_id})")
+    lines = [
+        "# RIFTBOUND RULES REFERENCE (item-specific)",
+        "",
+        "Use this reference together with the card texts and game state in the question. "
+        "Do not infer facts that are absent from the card texts, this reference, or the stated game state.",
+        "",
+    ]
+    for r in rules_used:
+        lines.append(f"[Section {r}] {frags[r]}")
+    lines.append("")
+    return "\n".join(lines), rules_used
+
+
 def load_env(path: str) -> dict:
     env = dict(os.environ)
     try:
@@ -59,7 +111,7 @@ def load_env(path: str) -> dict:
         pass
     return env
 
-def call_llm(base_url: str, model: str, key: str, user_msg: str, temperature: float, retries: int = 3) -> dict:
+def call_llm(base_url: str, model: str, key: str, user_msg: str, temperature: float, retries: int = 3, max_tokens: int = 2500) -> dict:
     payload = {
         "model": model,
         "messages": [
@@ -67,7 +119,7 @@ def call_llm(base_url: str, model: str, key: str, user_msg: str, temperature: fl
             {"role": "user", "content": user_msg},
         ],
         "temperature": temperature,
-        "max_tokens": 1500,
+        "max_tokens": max_tokens,
     }
     body = json.dumps(payload).encode("utf-8")
     last_err = None
@@ -92,8 +144,8 @@ def call_llm(base_url: str, model: str, key: str, user_msg: str, temperature: fl
             time.sleep(3 * attempt)
     return {"__error__": f"{last_err}"}
 
-def extract_and_classify(raw_text: str) -> dict:
-    """BenchING-style classification of the model output."""
+def extract_and_classify(raw_text: str, max_tokens: int = 2500) -> dict:
+    """BenchING-style classification + truncation split (v2)."""
     if not raw_text or not raw_text.strip():
         return {"error_class": "empty_response", "parsed": None}
     blocks = re.findall(r"```(?:json)?\s*(.*?)```", raw_text, re.S)
@@ -101,6 +153,9 @@ def extract_and_classify(raw_text: str) -> dict:
     try:
         obj = json.loads(content)
     except json.JSONDecodeError:
+        # truncation split: output hit the token cap and never closed
+        if len(raw_text) >= max_tokens * 3 and not raw_text.rstrip().endswith("}"):
+            return {"error_class": "truncated", "parsed": None, "extracted": content[:300]}
         return {"error_class": "incorrect_syntax", "parsed": None, "extracted": content[:500]}
     if not isinstance(obj, dict) or "final_outcome" not in obj or "effect_chain" not in obj:
         return {"error_class": "incomplete_keys", "parsed": obj}
@@ -109,10 +164,25 @@ def extract_and_classify(raw_text: str) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True, choices=list(MODELS) + ["all"])
+    ap.add_argument("--condition", default="A", choices=["A", "B", "C"],
+                    help="A=card text only; B=+ frozen global rules card; C=+ per-item oracle rules subset")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--temperature", type=float, default=0.2)
     ap.add_argument("--bench", default=BENCH_PATH)
     args = ap.parse_args()
+
+    rules_block_global = ""
+    oracle_map = None
+    frags = None
+    if args.condition == "B":
+        card = open(RULES_CARD_PATH, encoding="utf-8").read()
+        body = card.split("# RIFTBOUND GLOBAL RULES REFERENCE", 1)[1].split("## Harness notes", 1)[0]
+        rules_block_global = "# RIFTBOUND GLOBAL RULES REFERENCE" + body.strip() + "\n\n"
+        print(f"condition B: rules card injected ({len(rules_block_global)} chars, same for every item)")
+    elif args.condition == "C":
+        oracle_map = json.load(open(ORACLE_MAP_PATH, encoding="utf-8"))
+        frags = build_oracle_slicer()
+        print(f"condition C: oracle mode ({len(frags)} rule fragments sliced from B-v1 card)")
 
     env = load_env(ENV_PATH)
     items = [json.loads(l) for l in open(args.bench, encoding="utf-8") if l.strip()]
@@ -128,14 +198,23 @@ def main() -> None:
             print(f"[{mkey}] MISSING {cfg['key_env']} - skipped", file=sys.stderr)
             continue
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_path = f"results/pilot_{mkey}_{ts}.jsonl"
+        cond = args.condition
+        out_path = f"results/pilot{cond}_{mkey}_{ts}.jsonl"
         os.makedirs("results", exist_ok=True)
-        stats = {"empty_response": 0, "incorrect_syntax": 0, "incomplete_keys": 0, "parsed_ok": 0}
+        stats = {"empty_response": 0, "incorrect_syntax": 0, "incomplete_keys": 0, "parsed_ok": 0, "truncated": 0}
         with open(out_path, "w", encoding="utf-8") as out:
             for i, item in enumerate(items, 1):
-                resp = call_llm(cfg["base_url"], cfg["model"], key, item["prompt_en"], args.temperature)
+                if args.condition == "B":
+                    prompt = rules_block_global + item["prompt_en"]
+                elif args.condition == "C":
+                    block, rules_used = build_oracle_block(item["case_id"], oracle_map, frags)
+                    prompt = block + item["prompt_en"]
+                else:
+                    rules_used = []
+                    prompt = item["prompt_en"]
+                resp = call_llm(cfg["base_url"], cfg["model"], key, prompt, args.temperature)
                 if "__error__" in resp:
-                    raw_text, api_model, usage = "", None, None
+                    raw_text, api_model, usage, finish = "", None, None, None
                     stats["empty_response"] += 1
                     cls = {"error_class": "api_error", "parsed": None}
                 else:
@@ -143,6 +222,7 @@ def main() -> None:
                     raw_text = choice.get("content") or ""
                     api_model = resp.get("model")
                     usage = resp.get("usage")
+                    finish = resp["choices"][0].get("finish_reason")
                     cls = extract_and_classify(raw_text)
                     stats[cls["error_class"]] = stats.get(cls["error_class"], 0) + 1
                 rec = {
@@ -150,10 +230,14 @@ def main() -> None:
                     "case_id": item["case_id"],
                     "pair_role": item["pair_role"],
                     "capability": item["capability"],
+                    "condition": cond,
                     "benchmark_schema": item["schema_version"],
+                    "rules_card": "B-v1" if cond == "B" else None,
+                    "oracle_rules": rules_used if cond == "C" else [],
                     "model_requested": cfg["model"],
                     "model_returned": api_model,
                     "temperature": args.temperature,
+                    "finish_reason": finish,
                     "ts": datetime.datetime.now().isoformat(timespec="seconds"),
                     "error_class": cls["error_class"],
                     "gold_final_en": item["gold_final_en"],
