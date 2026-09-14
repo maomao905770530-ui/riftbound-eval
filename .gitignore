@@ -8,3 +8,5 @@ __pycache__/
 # publicly redistributed. Only the format example stays public.
 data/cards/*
 !data/cards/example_card_format.json
+# Bench items embed full official card text; same policy as above.
+data/bench/
