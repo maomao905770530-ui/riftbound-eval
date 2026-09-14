@@ -23,8 +23,26 @@ import sys
 from collections import defaultdict
 
 DEFAULT_IN = r"C:\Users\90577\Documents\ChatGPT\论文\RiftBench_Origins_v0.1.jsonl"
-DEFAULT_OUT = "data/bench/riftbench_origins_v0.2.jsonl"
+DEFAULT_OUT = "data/bench/riftbench_origins_v0.3.jsonl"
 CARDS_JSON = "data/cards/origins_enriched.json"
+
+# Reviewer-driven fixups (小福贵 adjudication 2026-09-14 + 小彩蝶 re-check)
+FIXUPS = {
+    # C02-V: gold demanded the optional-zero clause as a necessary condition;
+    # the core fact is that U gets the buff. Judge now compares core facts only.
+    "OGN-C02-V": {"gold_final_en": "U receives a +1 [M] buff (selecting zero units is also legal, but buffing U is the natural resolution)."},
+    # C11-V: base was upgraded to six exhausted runes; the variant must change
+    # ONLY Sona's location, so the rune count stays six.
+    "OGN-C11-V": {
+        "state_task_en": "At end of your turn Sona is at base, not a battlefield. Six friendly runes R1 through R6 are all exhausted. Resolve Sona's rune ability.",
+        "gold_final_en": "No rune is readied.",
+        "effect_chain_en": [
+            "The end-of-turn ability checks Sona's location.",
+            "Sona is not at a battlefield, so the condition fails.",
+            "No rune-readying effect occurs.",
+        ],
+    },
+}
 
 # capability mapping by case (first-pass taxonomy, reviewer may adjust)
 CAPABILITY = {
@@ -77,6 +95,28 @@ def main() -> None:
 
     rows = [json.loads(l) for l in open(src, encoding="utf-8").read().strip().split("\n") if l.strip()]
     missing = set()
+
+    # PASS 1: collect base state text per case (for reference expansion)
+    base_state = {}
+    for r in rows:
+        if r["pair_role"] == "base":
+            base_state[r["case_id"]] = r["prompt_en"]
+
+    # PASS 2: expand cross-references in variant prompts.
+    # "As C04-B, but ..." / "Use C13-B, but ..." -> inline the full base state.
+    def expand(match, base_state):
+        cid, conj = match.group(1), (match.group(2) or "")
+        b = base_state.get(cid)
+        if not b:
+            return match.group(0)
+        joiner = " However, " if conj else " "
+        return b.rstrip(". ") + "." + joiner
+
+    ref_re = re.compile(r"(?:As|Use) (C\d+)-B,?\s*(but |except )?", re.I)
+    for r in rows:
+        if r["pair_role"] == "variant":
+            r["prompt_en"] = ref_re.sub(lambda m: expand(m, base_state), r["prompt_en"])
+
     out_rows = []
     for r in rows:
         r = dict(r)
@@ -102,6 +142,9 @@ def main() -> None:
             r["state_task_en"] = C11B_NEW["state"] + " " + C11B_NEW["question"]
         else:
             r["state_task_en"] = r["prompt_en"]
+        # apply reviewer fixups AFTER state_task_en is set (they override it)
+        if r["item_id"] in FIXUPS:
+            r.update(FIXUPS[r["item_id"]])
 
         # 3) rebuild self-contained prompt
         card_block = "\n".join(f"- {ref}: {texts[ref.split(' (')[0].replace(chr(8217), chr(39))]}"
@@ -112,7 +155,7 @@ def main() -> None:
 
         # 4) new fields
         r["capability"] = CAPABILITY.get(r["case_id"], "unclassified")
-        r["schema_version"] = "0.2"
+        r["schema_version"] = "0.3"
         r["status"] = "enriched_draft_pending_model_run"
         out_rows.append(r)
 

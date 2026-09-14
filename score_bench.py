@@ -109,7 +109,7 @@ def main() -> None:
         rows = [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
         # attach the original task text from the bench file
         bench = {json.loads(l)["item_id"]: json.loads(l)
-                 for l in open("data/bench/riftbench_origins_v0.2.jsonl", encoding="utf-8") if l.strip()}
+                 for l in open("data/bench/riftbench_origins_v0.3.jsonl", encoding="utf-8") if l.strip()}
         out_path = path.replace(".jsonl", "_scored.jsonl")
         verdicts = {}
         with open(out_path, "w", encoding="utf-8") as out:

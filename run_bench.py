@@ -26,7 +26,7 @@ import sys
 import time
 import urllib.request
 
-BENCH_PATH = "data/bench/riftbench_origins_v0.2.jsonl"
+BENCH_PATH = "data/bench/riftbench_origins_v0.3.jsonl"
 ENV_PATH = ".env"
 
 MODELS = {
